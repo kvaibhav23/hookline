@@ -1,7 +1,10 @@
+import { storageProblem } from "@/lib/config";
 import { createRun } from "@/lib/pipeline";
 import { getStore } from "@/lib/store";
 
 export async function POST(req: Request) {
+  const problem = storageProblem();
+  if (problem) return Response.json({ error: problem }, { status: 503 });
   const body = await req.json();
   if (!body?.name?.trim() || !body?.company?.trim()) return Response.json({ error: "name and company are required" }, { status: 400 });
   const run = await createRun({

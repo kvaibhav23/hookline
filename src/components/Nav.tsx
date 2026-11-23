@@ -16,6 +16,7 @@ interface Health {
   exa: boolean;
   tavily: boolean;
   db: string;
+  storageProblem: string | null;
   mock: boolean;
 }
 
@@ -55,6 +56,7 @@ export function Nav() {
             ))}
         </div>
       </div>
+      {h?.storageProblem && <div className="bg-bad-soft text-bad text-sm text-center px-6 py-2">Runs are disabled: {h.storageProblem}</div>}
     </header>
   );
 }

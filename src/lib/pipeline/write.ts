@@ -4,7 +4,7 @@ import { llmJson } from "../llm";
 import { search } from "../search";
 import { getStore } from "../store";
 import type { Candidate, ClaimCheck, Confidence, Draft, Hook, LintResult, Signal } from "../types";
-import { addDays, daysSince, functionHint, parseTitleLine, words } from "./util";
+import { addDays, cutClaim, daysSince, functionHint, parseTitleLine, sameCompany, words } from "./util";
 
 // ───────────────────────── Sensitivity gate ─────────────────────────
 // Deterministic rules, not vibes: a buyer can read exactly why we held.
@@ -13,15 +13,15 @@ const HOLD_TYPES = new Set(["layoffs", "acquisition", "legal", "crisis"]);
 
 export async function stageGate(ctx: Ctx): Promise<"next" | "hold"> {
   const { state, seller } = ctx.run;
-  const company = state.target.company.toLowerCase();
+  const company = state.target.company;
   const reasons: string[] = [];
   const filtered: string[] = [];
   let revisitOn: string | undefined;
 
-  if (seller.customers.some((c) => c && company.includes(c.toLowerCase())))
-    reasons.push(`${state.target.company} is already a customer — route to the account manager instead of cold outreach.`);
-  if (seller.competitors.some((c) => c && company.includes(c.toLowerCase())))
-    reasons.push(`${state.target.company} is listed as a competitor — do not contact.`);
+  const customer = seller.customers.find((c) => sameCompany(c, company));
+  if (customer) reasons.push(`${state.target.company} is already a customer (matches "${customer}") — route to the account manager instead of cold outreach.`);
+  const rival = seller.competitors.find((c) => sameCompany(c, company));
+  if (rival) reasons.push(`${state.target.company} is listed as a competitor (matches "${rival}") — do not contact.`);
 
   for (const s of state.signals) {
     if (s.sensitivity === "personal") {
@@ -393,14 +393,23 @@ export async function stageVerify(ctx: Ctx): Promise<"next"> {
     checks = await checkClaims(ctx, d);
     lint = lintDraft(d);
     // Firewall: if anything is STILL unsupported, cut the sentence rather than ship it.
+    const unresolved: ClaimCheck[] = [];
     for (const c of checks.filter((x) => x.verdict === "unsupported")) {
-      const sentences = d.body.split(/(?<=[.!?])\s+/);
-      const kept = sentences.filter((s) => !s.toLowerCase().includes(c.statement.toLowerCase().slice(0, 40)));
-      if (kept.length < sentences.length) {
-        d = { ...d, body: kept.join(" ") };
+      const cut = cutClaim(d.body, c.statement);
+      if (cut !== null) {
+        d = { ...d, body: cut };
         c.note = "Sentence removed automatically by the claim firewall";
-      }
+      } else unresolved.push(c);
     }
+    lint = lintDraft(d);
+    // Couldn't locate it to cut: never hand over a draft that silently contains it.
+    if (unresolved.length) {
+      state.unresolvedClaims = unresolved;
+      state.confidence = "LOW";
+      state.confidenceWhy = `${unresolved.length} claim(s) could not be verified or removed automatically. Check or edit them before approving.`;
+      await ctx.emit("verify", "error", `${unresolved.length} unsupported claim(s) still in the draft — flagged for the rep, confidence lowered to LOW.`);
+    }
+    if (lintErrors(lint).length) await ctx.emit("verify", "info", `Rule issue(s) remain after revision: ${lintErrors(lint).map((e) => e.rule).join("; ")}.`);
   }
   state.draft = d;
   state.claimChecks = checks;

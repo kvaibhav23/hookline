@@ -59,9 +59,13 @@ export function DraftReview({ run, onChanged }: { run: Run; onChanged: () => voi
   const [reason, setReason] = useState("");
   const [rejecting, setRejecting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [checked, setChecked] = useState(false);
 
   const reviewed = run.status === "approved" || run.status === "rejected";
   const edited = subject !== d.subject || body !== d.body;
+  const unresolved = run.state.unresolvedClaims || [];
+  // An unsupported claim the firewall couldn't cut must be consciously handled, never one-click approved.
+  const blocked = !reviewed && unresolved.length > 0 && !edited && !checked;
 
   const act = async (action: "approved" | "rejected") => {
     await fetch(`/api/runs/${run.id}/review`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, subject, body, reason }) });
@@ -90,6 +94,23 @@ export function DraftReview({ run, onChanged }: { run: Run; onChanged: () => voi
         <ConfidenceLine run={run} />
         {run.state.winnerRationale && <p className="text-xs text-muted mt-1.5">Why this hook: {run.state.winnerRationale}</p>}
       </div>
+
+      {!reviewed && unresolved.length > 0 && (
+        <div className="mb-4 rounded-lg bg-bad-soft p-3 text-sm">
+          <p className="font-semibold text-bad">
+            {unresolved.length === 1 ? "1 claim" : `${unresolved.length} claims`} in this draft could not be verified against any source
+          </p>
+          <ul className="mt-1 list-disc pl-5">
+            {unresolved.map((c, i) => (
+              <li key={i}>{c.statement}</li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted mt-1.5">The automatic rewrite didn&apos;t remove it. Edit it out, or confirm you know it&apos;s true.</p>
+          <label className="mt-2 flex items-center gap-2 text-xs">
+            <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />I&apos;ve checked these claims myself
+          </label>
+        </div>
+      )}
 
       {tab === "email" ? (
         <div className="rounded-xl border border-line overflow-hidden">
@@ -134,7 +155,7 @@ export function DraftReview({ run, onChanged }: { run: Run; onChanged: () => voi
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {!reviewed && (
           <>
-            <button className="btn btn-good" onClick={() => act("approved")}>
+            <button className="btn btn-good" disabled={blocked} title={blocked ? "Resolve the unverified claim(s) above first" : undefined} onClick={() => act("approved")}>
               ✓ Approve {edited ? "with edits" : ""} & copy
             </button>
             <button className="btn" onClick={() => navigator.clipboard?.writeText(tab === "email" ? `Subject: ${subject}\n\n${body}` : d.linkedin)}>

@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import type { Run, RunEvent, SellerProfile } from "../types";
-import type { Store } from "./index";
+import { STALE_MS, type Claim, type Store } from "./index";
 
 // Local JSON-file store. Good for running on your laptop with zero setup.
 // On Vercel, set DATABASE_URL (Postgres) instead — /tmp is wiped between invocations.
@@ -66,13 +66,15 @@ export class FileStore implements Store {
       db.runs[run.id] = clone({ ...run, updatedAt: new Date().toISOString() });
     });
   }
-  async claimRun(id: string) {
+  async claimRun(id: string): Promise<Claim> {
     return locked((db) => {
       const r = db.runs[id];
-      if (!r || r.status !== "queued") return false;
+      if (!r) return false;
+      const stale = r.status === "running" && Date.now() - Date.parse(r.updatedAt) > STALE_MS;
+      if (r.status !== "queued" && !stale) return false;
       r.status = "running";
       r.updatedAt = new Date().toISOString();
-      return true;
+      return stale ? "stale" : "queued";
     });
   }
   async listRuns(limit = 500) {

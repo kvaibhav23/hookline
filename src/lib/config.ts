@@ -35,6 +35,16 @@ export function isMock(): boolean {
   return !llmProvider() || !(process.env.EXA_API_KEY || process.env.TAVILY_API_KEY);
 }
 
+/**
+ * The JSON-file store only works on a single long-lived server. On serverless (Vercel) each function
+ * instance has its own /tmp, so a run created by one request is invisible to the next: refuse loudly
+ * instead of failing silently.
+ */
+export function storageProblem(): string | null {
+  if (process.env.DATABASE_URL || !process.env.VERCEL) return null;
+  return "DATABASE_URL is not set. On Vercel, runs must be stored in Postgres (e.g. Neon); add DATABASE_URL in the project's environment variables and redeploy.";
+}
+
 export function health() {
   return {
     llm: llmProvider(),
@@ -42,6 +52,7 @@ export function health() {
     exa: !!process.env.EXA_API_KEY,
     tavily: !!process.env.TAVILY_API_KEY,
     db: process.env.DATABASE_URL ? "postgres" : "file",
+    storageProblem: storageProblem(),
     mock: isMock(),
   };
 }

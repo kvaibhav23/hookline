@@ -165,6 +165,8 @@ export interface PipelineState {
   firstDraft?: Draft;
   claimChecks?: ClaimCheck[];
   claimsCaught?: ClaimCheck[];
+  /** Unsupported claims that survived the rewrite AND could not be cut automatically. Rep must resolve. */
+  unresolvedClaims?: ClaimCheck[];
   lint?: LintResult[];
   alternates?: Candidate[];
   confidence?: Confidence;
@@ -215,5 +217,9 @@ export interface RunEvent {
   message: string;
   ms?: number;
 }
+
+/** A "running" run with no checkpoint for this long has lost its worker (longer than the 300s route limit). */
+export const STALE_MS = 6 * 60_000;
+export const isStale = (r: Pick<Run, "status" | "updatedAt">, now = Date.now()) => r.status === "running" && now - Date.parse(r.updatedAt) > STALE_MS;
 
 export const TERMINAL: RunStatus[] = ["paused", "awaiting_review", "hold", "approved", "rejected", "failed"];

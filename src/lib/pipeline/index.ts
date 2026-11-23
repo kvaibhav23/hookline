@@ -54,7 +54,7 @@ export async function createRun(input: RunInput): Promise<Run> {
  * Execute a claimed run from state.nextStage until it finishes, pauses or holds.
  * Every stage boundary is persisted, so a paused run resumes exactly where it stopped.
  */
-export async function executeRun(runId: string, onEvent?: (e: RunEvent) => void): Promise<Run> {
+export async function executeRun(runId: string, onEvent?: (e: RunEvent) => void, opts: { reclaimed?: boolean } = {}): Promise<Run> {
   const store = getStore();
   const run = (await store.getRun(runId))!;
   run.status = "running";
@@ -71,6 +71,8 @@ export async function executeRun(runId: string, onEvent?: (e: RunEvent) => void)
   };
 
   try {
+    if (opts.reclaimed)
+      await ctx.emit(run.state.nextStage, "info", "The previous worker stopped mid-run (tab closed or timeout). Resuming from the last completed stage.");
     let i = ORDER.indexOf(run.state.nextStage);
     while (i < ORDER.length) {
       const stage = ORDER[i];

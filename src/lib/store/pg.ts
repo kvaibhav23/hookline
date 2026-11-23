@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import type { Run, RunEvent, SellerProfile } from "../types";
-import type { Store } from "./index";
+import { STALE_MS, type Claim, type Store } from "./index";
 
 // Postgres store (Neon / Supabase / Vercel Postgres). Tables are created on first use.
 
@@ -42,11 +42,17 @@ export class PgStore implements Store {
     const r = { ...run, updatedAt: now };
     await this.sql`update hl_runs set status = ${r.status}, updated_at = ${now}, data = ${this.sql.json(r as never)} where id = ${r.id}`;
   }
-  async claimRun(id: string) {
+  async claimRun(id: string): Promise<Claim> {
     await this.init();
-    const rows = await this.sql`update hl_runs set status = 'running',
-      data = jsonb_set(data, '{status}', '"running"') where id = ${id} and status = 'queued' returning id`;
-    return rows.length === 1;
+    const staleSecs = STALE_MS / 1000;
+    const rows = await this.sql`
+      update hl_runs r set status = 'running', updated_at = now(), data = jsonb_set(r.data, '{status}', '"running"')
+      from (select id, status as prev from hl_runs where id = ${id} for update) p
+      where r.id = p.id
+        and (p.prev = 'queued' or (p.prev = 'running' and r.updated_at < now() - make_interval(secs => ${staleSecs})))
+      returning p.prev`;
+    if (!rows.length) return false;
+    return rows[0].prev === "queued" ? "queued" : "stale";
   }
   async listRuns(limit = 500) {
     await this.init();

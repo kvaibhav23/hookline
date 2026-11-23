@@ -203,13 +203,16 @@ export function Verification({ run }: { run: Run }) {
           </ul>
           {st.claimsCaught?.length ? (
             <div className="mt-4 rounded-lg bg-bad-soft p-3">
-              <p className="text-xs font-semibold text-bad">Caught in the first draft and removed:</p>
+              <p className="text-xs font-semibold text-bad">Caught in the first draft:</p>
               {st.claimsCaught.map((c, i) => (
                 <p key={i} className="text-sm mt-1 line-through decoration-bad/60">
                   {c.statement}
                 </p>
               ))}
-              <p className="text-xs text-muted mt-1">No source supported this, so it was sent back for a rewrite before the rep ever saw it.</p>
+              <p className="text-xs text-muted mt-1">
+                No source supported {st.claimsCaught.length === 1 ? "this" : "these"}, so the draft was sent back for a rewrite before the rep saw it.
+                {st.unresolvedClaims?.length ? ` ${st.unresolvedClaims.length} still could not be removed. See the warning on the draft.` : ""}
+              </p>
             </div>
           ) : null}
         </div>

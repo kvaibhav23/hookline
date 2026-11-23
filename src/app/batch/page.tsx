@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { BranchBadge, ConfidencePill, secs, StatusPill } from "@/components/ui";
-import type { Run, SellerProfile } from "@/lib/types";
+import { isStale, type Run, type SellerProfile } from "@/lib/types";
 
 const SAMPLE = `name,company,title,expected
 Priya Menon,Finlark,VP Finance Operations,ready
@@ -53,6 +53,7 @@ export default function Batch() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [running, setRunning] = useState(false);
   const [mock, setMock] = useState(false);
+  const [err, setErr] = useState("");
   const started = useRef(0);
   const [elapsed, setElapsed] = useState(0);
 
@@ -77,29 +78,52 @@ export default function Batch() {
 
   const rows = parseCsv(csv);
 
-  const start = async () => {
+  // The browser drives execution (one stream request per run), so the batch id lives in the URL:
+  // reopening the page picks up whatever is still queued or was abandoned mid-run.
+  const batchRuns = async (id: string): Promise<Run[]> => (await fetch("/api/runs").then((r) => r.json())).runs.filter((r: Run) => r.input.batchId === id);
+  const drive = async (id: string, all: Run[]) => {
+    setBatchId(id);
     setRunning(true);
     started.current = Date.now();
-    const r = await fetch("/api/batches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows, sellerId }) });
-    const j = await r.json();
-    setBatchId(j.batchId);
+    const todo = all.filter((r) => r.status === "queued" || isStale(r)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     // Same-company prospects run one after another (so the collision check can see the earlier hook);
     // different companies run 3 at a time.
     const byCompany = new Map<string, string[]>();
-    j.ids.forEach((id: string, i: number) => {
-      const c = (rows[i]?.company || id).toLowerCase();
-      byCompany.set(c, [...(byCompany.get(c) || []), id]);
-    });
+    for (const r of todo) {
+      const c = r.input.company.toLowerCase();
+      byCompany.set(c, [...(byCompany.get(c) || []), r.id]);
+    }
     const groups = [...byCompany.values()];
     const worker = async () => {
       while (groups.length) {
         const g = groups.shift()!;
-        for (const id of g) await fetch(`/api/runs/${id}/stream`).then((res) => res.text()).catch(() => {});
+        for (const rid of g) await fetch(`/api/runs/${rid}/stream`).then((res) => res.text()).catch(() => {});
       }
     };
     await Promise.all([worker(), worker(), worker()]);
     setElapsed(Date.now() - started.current);
     setRunning(false);
+  };
+
+  useEffect(() => {
+    const b = new URLSearchParams(window.location.search).get("b");
+    if (b) batchRuns(b).then((all) => drive(b, all));
+  }, []);
+
+  const start = async () => {
+    setErr("");
+    const r = await fetch("/api/batches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows, sellerId }) });
+    const j = await r.json();
+    if (!r.ok) return setErr(j.error || "Could not start the batch");
+    window.history.replaceState(null, "", `?b=${j.batchId}`);
+    await drive(j.batchId, await batchRuns(j.batchId));
+  };
+
+  const reset = () => {
+    window.history.replaceState(null, "", window.location.pathname);
+    setBatchId(null);
+    setRuns([]);
+    setCsv("");
   };
 
   const onFile = async (f?: File) => f && setCsv(await f.text());
@@ -147,6 +171,7 @@ export default function Batch() {
               Run {rows.length || ""} prospect{rows.length === 1 ? "" : "s"} →
             </button>
           </div>
+          {err && <p className="text-bad text-sm">{err}</p>}
         </div>
       )}
 
@@ -168,7 +193,7 @@ export default function Batch() {
               </span>
             )}
             {!running && (
-              <button className="btn" onClick={() => (setBatchId(null), setRuns([]), setCsv(""))}>
+              <button className="btn" onClick={reset}>
                 New batch
               </button>
             )}
