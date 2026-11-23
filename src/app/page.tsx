@@ -1,69 +1,139 @@
-import Image from "next/image";
+"use client";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { StatusPill } from "@/components/ui";
+import type { Run, SellerProfile } from "@/lib/types";
 
-export default function Home() {
+const SAMPLES = [
+  { tag: "Happy path", name: "Priya Menon", company: "Finlark", title: "VP Finance Operations", note: "Strong person-level signal" },
+  { tag: "⏸ Pause", name: "Rahul Sharma", company: "Nimbus Systems", title: "", note: "3 people share the name" },
+  { tag: "↪ Pivot", name: "Arjun Rao", company: "Quillbyte", title: "Procurement Manager", note: "Moved companies recently" },
+  { tag: "✋ Hold", name: "Meera Iyer", company: "Tessaract Retail", title: "Director, Finance", note: "Layoffs announced last week" },
+  { tag: "⤓ Degrade", name: "Kavya Nair", company: "Banyan Foods", title: "Finance Manager", note: "No public footprint" },
+];
+
+export default function NewRun() {
+  const router = useRouter();
+  const [sellers, setSellers] = useState<SellerProfile[]>([]);
+  const [recent, setRecent] = useState<Run[]>([]);
+  const [mock, setMock] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [f, setF] = useState({ name: "", company: "", title: "", linkedinUrl: "", pastedContext: "", sellerId: "ai-ops" });
+
+  useEffect(() => {
+    fetch("/api/sellers").then((r) => r.json()).then((j) => setSellers(j.sellers));
+    fetch("/api/runs").then((r) => r.json()).then((j) => setRecent(j.runs.slice(0, 6)));
+    fetch("/api/health").then((r) => r.json()).then((h) => setMock(h.mock));
+  }, []);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr("");
+    const r = await fetch("/api/runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(f) });
+    const j = await r.json();
+    if (!r.ok) {
+      setErr(j.error || "Failed");
+      setBusy(false);
+      return;
+    }
+    router.push(`/runs/${j.id}`);
+  };
+
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-8">
+      <div>
+        <p className="label mb-2">Prospect → researched, verified draft</p>
+        <h1 className="text-3xl font-semibold tracking-tight max-w-xl leading-tight">Name a prospect. Get a draft worth reviewing, with a source for every claim.</h1>
+        <p className="text-muted mt-3 max-w-xl">
+          Hookline researches the person and company, picks the most relevant hook for what you sell and writes a short email. It checks every fact against its source. It also knows when <em>not</em> to send. A human approves everything.
+        </p>
+
+        <form onSubmit={submit} className="card p-6 mt-8 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Prospect name *</label>
+              <input className="input mt-1.5" value={f.name} onChange={set("name")} placeholder="e.g. Priya Menon" required />
+            </div>
+            <div>
+              <label className="label">Company *</label>
+              <input className="input mt-1.5" value={f.company} onChange={set("company")} placeholder="e.g. Finlark" required />
+            </div>
+            <div>
+              <label className="label">Title (optional)</label>
+              <input className="input mt-1.5" value={f.title} onChange={set("title")} placeholder="Helps pick the right person" />
+            </div>
+            <div>
+              <label className="label">Profile URL (optional)</label>
+              <input className="input mt-1.5" value={f.linkedinUrl} onChange={set("linkedinUrl")} placeholder="Skips identity matching" />
+            </div>
+          </div>
+          <div>
+            <label className="label">Anything you already know (optional)</label>
+            <textarea className="input mt-1.5 h-20" value={f.pastedContext} onChange={set("pastedContext")} placeholder="Paste a recent post, a note from a call… treated as a source, cited like any other." />
+          </div>
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <label className="label">What are we selling?</label>
+              <select className="input mt-1.5" value={f.sellerId} onChange={set("sellerId")}>
+                {sellers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button className="btn btn-primary h-[40px] px-6" disabled={busy}>
+              {busy ? "Starting…" : "Research & draft →"}
+            </button>
+          </div>
+          {err && <p className="text-bad text-sm">{err}</p>}
+        </form>
+      </div>
+
+      <aside className="space-y-6">
+        <div className="card p-5">
+          <p className="label mb-3">{mock ? "Sample prospects (mock data)" : "Edge-case scenarios to try"}</p>
+          {!mock && <p className="text-xs text-muted mb-3">These are fictional and only resolve in mock mode. In live mode, use real names, e.g. someone in this week&apos;s layoff news to trigger Hold.</p>}
+          <div className="space-y-2">
+            {SAMPLES.map((s) => (
+              <button key={s.name} type="button" onClick={() => setF({ ...f, name: s.name, company: s.company, title: s.title })} className="w-full text-left px-3 py-2.5 rounded-lg border border-line hover:border-ink transition bg-white">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">
+                    {s.name} · <span className="text-muted">{s.company}</span>
+                  </span>
+                  <span className="text-xs text-muted">{s.tag}</span>
+                </div>
+                <p className="text-xs text-muted mt-0.5">{s.note}</p>
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        {recent.length > 0 && (
+          <div className="card p-5">
+            <div className="flex items-center mb-3">
+              <p className="label">Recent runs</p>
+              <Link href="/dashboard" className="ml-auto text-xs text-accent">
+                All →
+              </Link>
+            </div>
+            <div className="space-y-1">
+              {recent.map((r) => (
+                <Link key={r.id} href={`/runs/${r.id}`} className="flex items-center justify-between py-1.5 text-sm hover:text-accent">
+                  <span className="truncate">
+                    {r.input.name} <span className="text-muted">· {r.state.target?.company || r.input.company}</span>
+                  </span>
+                  <StatusPill status={r.status} />
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </aside>
     </div>
   );
 }

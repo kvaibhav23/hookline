@@ -6,12 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "MOCK_MODE=1 tsx scripts/test-branches.ts",
+    "dev:mock": "MOCK_MODE=1 next dev"
   },
   "dependencies": {
+    "geist": "^1.9.2",
     "next": "16.4.6",
+    "postgres": "^4.1.1",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "4.3.3",
@@ -21,6 +26,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "tailwindcss": "4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

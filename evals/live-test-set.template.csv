@@ -1,0 +1,6 @@
+name,company,title,expected
+REPLACE: a senior person who recently gave a podcast/interview,Their company,Their title,ready
+REPLACE: a very common Indian name,A large company (e.g. an IT services firm),,pause
+REPLACE: someone who changed jobs in the last 3 months,Their OLD company,Old title,pivot
+REPLACE: a finance/ops leader,A company that announced layoffs in the last 30 days,Their title,hold
+REPLACE: a mid-level person at a small private company,That company,Their title,degrade
