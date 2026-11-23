@@ -1,6 +1,7 @@
 // Runs every behaviour branch end-to-end in MOCK mode and asserts the outcome.
 // Usage: MOCK_MODE=1 npx tsx scripts/test-branches.ts
 import { createRun, executeRun, resumeRun } from "../src/lib/pipeline";
+import { cutClaim, sameCompany } from "../src/lib/pipeline/util";
 import { getStore } from "../src/lib/store";
 
 process.env.MOCK_MODE = "1";
@@ -47,7 +48,7 @@ async function main() {
   }
 
   // collision: two people at the same company in one batch
-  const batchId = "b-test";
+  const batchId = `b-test-${Date.now()}`; // unique: the local file store persists between test runs
   const a = await createRun({ name: "Priya Menon", company: "Finlark", title: "VP Finance Operations", sellerId: "ai-ops", batchId });
   await getStore().claimRun(a.id);
   const ra = await executeRun(a.id);
@@ -67,6 +68,39 @@ async function main() {
   console.log(`   C hook=${wc} [${rc.branches.join(",")}]`);
   check(rc.branches.includes("collision-avoided"), "collision detected and avoided");
   check(JSON.stringify(wc) !== JSON.stringify(wb), "third colleague avoids the already-used hook");
+
+  // claim firewall: cuts a paraphrased claim, keeps paragraphs, leaves greeting/sign-off alone
+  console.log("\nClaim firewall");
+  const email = "Hi Priya,\n\nFinlark just raised a $40M Series B. Congrats on being named to the Fintech 40 Under 40 list too.\n\nWe help finance teams close faster.\n\nVaibhav";
+  const cut = cutClaim(email, "Priya was named to Fintech's 40 Under 40 list");
+  check(cut !== null && !/40 Under 40/.test(cut), "cuts the sentence carrying a paraphrased unsupported claim");
+  check(!!cut && cut.startsWith("Hi Priya,\n\n") && cut.includes("\n\nWe help") && cut.endsWith("\n\nVaibhav"), "keeps paragraph breaks, greeting and sign-off");
+  check(cutClaim(email, "the company is opening an office in Dubai") === null, "returns null (→ flagged for the rep) when nothing matches");
+
+  // gate: whole-word company matching
+  console.log("\nCustomer / competitor matching");
+  check(sameCompany("Acme Ltd", "Acme"), "ignores legal suffixes");
+  check(sameCompany("Acme", "Acme Payments Pvt. Ltd."), "matches a longer name at word boundaries");
+  check(!sameCompany("Meta", "Metabase"), "does not match inside another word");
+
+  // durability: a run whose worker died mid-way is reclaimed and resumes from its checkpoint
+  console.log("\nStale-run recovery");
+  const st = await createRun({ name: "Priya Menon", company: "Finlark", title: "VP Finance Operations", sellerId: "ai-ops" });
+  check((await getStore().claimRun(st.id)) === "queued", "first claim wins");
+  check((await getStore().claimRun(st.id)) === false, "second claim on a live run loses");
+  const dead = (await getStore().getRun(st.id))!;
+  dead.state.nextStage = "extract"; // pretend it checkpointed after gather, then the worker was killed
+  await getStore().saveRun(dead);
+  check((await getStore().claimRun(st.id)) === false, "a recently checkpointed run is not reclaimed");
+  const db = JSON.parse(await (await import("fs")).promises.readFile(".data/db.json", "utf8"));
+  db.runs[st.id].updatedAt = new Date(Date.now() - 7 * 60_000).toISOString();
+  await (await import("fs")).promises.writeFile(".data/db.json", JSON.stringify(db));
+  (globalThis as { __hlFile?: { cache: unknown } }).__hlFile!.cache = null;
+  const claim = await getStore().claimRun(st.id);
+  check(claim === "stale", "a run silent for >6 min is reclaimed");
+  const resumed = await executeRun(st.id, undefined, { reclaimed: claim === "stale" });
+  const evs = await getStore().getEvents(st.id);
+  check(resumed.status === "awaiting_review" && !evs.some((e) => e.stage === "identity"), "resumes from the checkpoint and finishes");
 
   console.log(fail ? `\n${fail} check(s) failed` : "\nAll checks passed");
   process.exit(fail ? 1 : 0);

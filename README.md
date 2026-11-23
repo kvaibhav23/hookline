@@ -16,7 +16,7 @@ It also knows when **not** to write. A human approves everything; nothing is sen
 
 | | Generic approach | Hookline |
 |---|---|---|
-| Facts | LLM summarises search results, which can introduce made-up details | Every signal carries a **verbatim quote** that must appear in the source. Every claim in the email is **fact-checked**; unsupported claims trigger a rewrite and are cut if they persist |
+| Facts | LLM summarises search results, which can introduce made-up details | Every signal carries a **verbatim quote** that must appear in the source. Every claim in the email is **fact-checked**. Unsupported claims trigger a rewrite and are cut if they persist. If one can't be located to cut, the draft drops to LOW confidence and **can't be approved** until the rep edits it out or confirms it |
 | Angle | First thing found | **Hook tournament**: 3 angles (signal → pain → *our* value prop), scored by a separate judge on relevance, specificity, timeliness, credibility and tact |
 | Outcome | Always a draft | **Ready · Pause · Pivot · Hold · Degrade**, each with a reason |
 | Batch | One at a time | CSV batch, review queue sorted by risk, **same-account collision avoidance** |
@@ -50,9 +50,13 @@ With no keys it starts in **mock mode**: fictional sample prospects that exercis
 
 ## Deploy (Vercel)
 
-1. Push to GitHub, then import the repo in Vercel.
-2. Add the env vars from `.env.example`. **`DATABASE_URL` is required on Vercel**: a free Neon or Supabase Postgres works, and tables are created automatically.
-3. Deploy. The stream route allows up to 300s per run (`maxDuration`).
+1. `npx vercel link`, or push to GitHub and import the repo in Vercel.
+2. Add the env vars from `.env.example`:
+   - **`DATABASE_URL` is required.** Without it, run creation returns a clear 503 and a banner explains why. (Serverless instances don't share `/tmp`, so a file store would lose runs silently.) A free Neon Postgres works (`npx vercel integration add neon`), and tables are created automatically.
+   - **`APP_PASSWORD`** on any public URL. Otherwise anyone can spend your LLM/search credits and read your prospect research.
+3. Deploy. Each run gets up to 300s (`maxDuration`).
+
+**Runs survive the browser.** A run doesn't depend on the tab that started it. The stream route keeps working after the client disconnects (`after()`). If a worker is killed anyway, every stage is checkpointed: a run that is "running" with no checkpoint for 6 minutes is reclaimed by the next viewer and resumes from its last completed stage. Batch ids live in the URL (`/batch?b=…`), so reopening a batch resumes whatever is unfinished.
 
 ## Architecture
 
